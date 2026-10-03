@@ -11,7 +11,7 @@ def update_ytdlp():
     try:
         subprocess.run(["pip", "install", "--upgrade", "yt-dlp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
-        print(f"Yangilashda xatolik: {e}")
+        print(f"Yangilash xatosi: {e}")
 
 update_ytdlp()
 
@@ -38,7 +38,7 @@ async def start_handler(message: types.Message):
 @dp.message(F.text & (F.text.startswith("http://") | F.text.startswith("https://")))
 async def handle_url(message: types.Message):
     url = message.text.strip()
-    processing_msg = await message.answer("Video yuklab olinmoqda, biroz kuting...")
+    processing_msg = await message.answer("Video yuklab olinmoqda, iltimos kuting...")
     
     output_template = "downloaded_video.mp4"
     if os.path.exists(output_template):
@@ -56,23 +56,23 @@ async def handle_url(message: types.Message):
             
         if os.path.exists(output_template):
             video_file = types.FSInputFile(output_template)
-            await message.answer_video(video_file, caption="Marhamat, siz so'ragan video!")
+            await message.answer_video(video_file, caption="Siz so'ragan video muvaffaqiyatli yuklab olindi!")
         else:
             await message.answer("Videoni yuklab bo'lmadi.")
     except Exception as e:
-        logging.error(f"Video yuklashda xatolik: {e}")
+        logging.error(f"Video yuklash xatosi: {e}")
         await message.answer("Videoni yuklab olishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. MUHIM: Raqam yuborilganda musiqani yuklab berish (Qidiruvdan oldin turishi shart!)
+# 2. Raqam tanlanganda musiqa yuklash (formatni o'zgartirdik)
 @dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
     if user_id not in user_search_results:
-        await message.answer("Avval qo'shiq nomini yozib qidiruv amalga oshiring!")
+        await message.answer("⚠️ Avval qo'shiq nomini yozib qidiruv amalga oshirishingiz kerak!")
         return
         
     index = int(message.text) - 1
@@ -83,7 +83,7 @@ async def download_selected_music(message: types.Message):
         return
         
     title, url = results[index]
-    processing_msg = await message.answer(f"🎵 '{title}' yuklab olinmoqda, kuting...")
+    processing_msg = await message.answer(f"🎵 '{title}' yuklab olinmoqda, iltimos kuting...")
     
     for f in os.listdir("."):
         if f.startswith("downloaded_audio"):
@@ -92,9 +92,10 @@ async def download_selected_music(message: types.Message):
             except:
                 pass
 
+    # YouTube'dan muammosiz yuklab olish uchun oddiyroq format sozlamasi
     ydl_opts = {
-        'format': 'bestaudio',
-        'outtmpl': 'downloaded_audio.%(ext)s',
+        'format': '18',  # YouTube'ning 360p mp4 formati (audio va videosi birga, hech qanday xatolik bermaydi)
+        'outtmpl': 'downloaded_audio.mp4',
         'max_filesize': 50 * 1024 * 1024,
     }
     
@@ -106,6 +107,7 @@ async def download_selected_music(message: types.Message):
             
         if downloaded_file and os.path.exists(downloaded_file):
             audio_input = types.FSInputFile(downloaded_file)
+            # Video formatida yuklab olib audio sifatida yuboramiz (Telegram uni musiqa/video sifatida ochib beradi)
             await message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
             update_ytdlp()
@@ -116,9 +118,9 @@ async def download_selected_music(message: types.Message):
                 audio_input = types.FSInputFile(downloaded_file)
                 await message.answer_audio(audio_input, caption=f"🎵 {title}")
             else:
-                await message.answer("⚠️ Musiqani yuklab bo'lmadi. Boshqasini tanlab ko'ring.")
+                await message.answer("⚠️ Musiqani yuklab bo'lmadi. Boshqa qo'shiqni tanlab ko'ring.")
     except Exception as e:
-        logging.error(f"Audio yuklash xatoligi: {e}")
+        logging.error(f"Audio yuklash xatosi: {e}")
         await message.answer("⚠️ Musiqani yuklab olishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
@@ -128,7 +130,7 @@ async def download_selected_music(message: types.Message):
             except:
                 pass
 
-# 3. Matn orqali musiqa qidirish (Faqat raqam bo'lmagan matnlar uchun)
+# 3. Matn orqali musiqa qidirish
 @dp.message(F.text & ~F.text.startswith("/") & ~F.text.startswith("http"))
 async def search_music(message: types.Message):
     query = message.text.strip()
@@ -181,19 +183,19 @@ async def search_music(message: types.Message):
         kb_builder.adjust(5, 5)
         keyboard = kb_builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
         
-        text += "\n👇 Yuklab olish uchun pastdagi tugmalardan raqamni tanlang yoki yuboring!"
+        text += "\n👇 Yuklab olish uchun pastdagi tugmalardan birini tanlang yoki yuboring!"
         await message.answer(text, reply_markup=keyboard)
         
     except Exception as e:
-        logging.error(f"Qidirish xatoligi: {e}")
-        await message.answer("Qidirishda xatolik yuz berdi.")
+        logging.error(f"Qidiruv xatosi: {e}")
+        await message.answer("Qidirish jarayonida xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
 
-# 4. Shazam orqali musiqa tanish
+# 4. Shazam orqali musiqa aniqlash
 @dp.message(F.voice | F.audio)
 async def handle_audio(message: types.Message):
-    processing_msg = await message.answer("Qo'shiq qidirilmoqda, biroz kuting...")
+    processing_msg = await message.answer("Qo'shiq qidirilmoqda, iltimos kuting...")
     audio_file_name = "temp_audio.ogg"
     
     try:
@@ -210,12 +212,12 @@ async def handle_audio(message: types.Message):
         if out and "track" in out:
             track = out["track"]
             title = track.get("title", "Noma'lum")
-            artist = track.get("subtitle", "Noma'lum artist")
+            artist = track.get("subtitle", "Noma'lum ijrochi")
             await message.answer(f"Topildi!\n\nQo'shiq: {title}\nIjrochi: {artist}")
         else:
             await message.answer("Kechirasiz, bu musiqani aniqlab bo'lmadi.")
     except Exception as e:
-        logging.error(f"Shazam xatoligi: {e}")
+        logging.error(f"Shazam xatosi: {e}")
         await message.answer("Musiqani aniqlashda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
