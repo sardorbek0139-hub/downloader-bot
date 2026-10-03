@@ -122,14 +122,14 @@ async def search_music(message: types.Message):
             results.append((title, url))
             
             text += f"{i}. {title}\n"
-            # Inline tugma qo'shamiz (bu ekranning ostida emas, xabar ostida chiqadi)
+            # FAQAT VA FAQAT INLINE TUGMA (Chatga matn yozmaydi)
             kb_builder.add(types.InlineKeyboardButton(text=str(i), callback_data=f"dl_{i-1}"))
             
         user_search_results[message.from_user.id] = results
         kb_builder.adjust(5, 5)
         keyboard = kb_builder.as_markup()
         
-        text += "\n👇 Yuklab olish uchun pastdagi tugmalardan birini bosing!"
+        text += "\n👇 Yuklab olish uchun tugmani bosing!"
         await message.answer(text, reply_markup=keyboard)
         
     except Exception as e:
@@ -143,7 +143,7 @@ async def search_music(message: types.Message):
 async def download_selected_music(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     if user_id not in user_search_results:
-        await callback.answer("Qidiruv eskirgan. Iltimos, qo'shiq nomini qaytadan yozing!", show_alert=True)
+        await callback.answer("Qidiruv eskirgan. Qaytadan qidiring!", show_alert=True)
         return
         
     index = int(callback.data.split("_")[1])
@@ -157,13 +157,19 @@ async def download_selected_music(callback: types.CallbackQuery):
     await callback.answer(f"'{title}' yuklab olinmoqda...")
     processing_msg = await callback.message.answer(f"🎵 '{title}' yuklab olinmoqda, kuting...")
     
-    audio_filename = "downloaded_audio.m4a"
+    audio_filename = "downloaded_audio.mp3"
     if os.path.exists(audio_filename):
         os.remove(audio_filename)
 
+    # YouTube'dan muammosiz yuklash uchun opsiya
     ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio',
-        'outtmpl': audio_filename,
+        'format': 'bestaudio/best',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'outtmpl': 'downloaded_audio',
         'max_filesize': 50 * 1024 * 1024,
         'noplaylist': True,
     }
@@ -172,19 +178,20 @@ async def download_selected_music(callback: types.CallbackQuery):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
             
-        if os.path.exists(audio_filename):
-            audio_input = types.FSInputFile(audio_filename)
+        real_file = "downloaded_audio.mp3"
+        if os.path.exists(real_file):
+            audio_input = types.FSInputFile(real_file)
             await callback.message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
             await callback.message.answer("Musiqani yuklab bo'lmadi.")
     except Exception as e:
         logging.error(f"Audio yuklash xatoligi: {e}")
-        await callback.message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
+        await message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
-        if os.path.exists(audio_filename):
+        if os.path.exists("downloaded_audio.mp3"):
             try:
-                os.remove(audio_filename)
+                os.remove("downloaded_audio.mp3")
             except:
                 pass
 
