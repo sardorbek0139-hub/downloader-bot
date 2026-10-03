@@ -7,6 +7,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from shazamio import Shazam
 import yt_dlp
 
+# yt-dlp kutubxonasini har safar yangilab turish uchun funksiya
 def update_ytdlp():
     try:
         subprocess.run(["pip", "install", "--upgrade", "yt-dlp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -23,22 +24,23 @@ shazam = Shazam()
 
 logging.basicConfig(level=logging.INFO)
 
+# Foydalanuvchilar qidirgan qo'shiqlar ro'yxatini saqlash uchun lug'at
 user_search_results = {}
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
     await message.answer(
-        "Assalomu alaykum!\n\n"
-        "YouTube, Instagram, TikTok havolasini yuboring — videoni yuklab beraman.\n"
-        "Qo'shiq nomini yozing — 10 ta variant chiqaraman.\n"
-        "Audio yoki ovozli xabar yuboring — Shazam orqali tanib beraman!"
+        "🎵 Assalomu alaykum!\n\n"
+        "• YouTube, Instagram, TikTok havolasini yuboring — videoni yuklab beraman.\n"
+        "• Qo'shiq nomini yozing — 10 ta variant chiqaraman.\n"
+        "• Audio yoki ovozli xabar yuboring — Shazam orqali tanib beraman!"
     )
 
 # 1. Havola orqali video yuklash
 @dp.message(F.text & (F.text.startswith("http://") | F.text.startswith("https://")))
 async def handle_url(message: types.Message):
     url = message.text.strip()
-    processing_msg = await message.answer("Video yuklab olinmoqda, iltimos kuting...")
+    processing_msg = await message.answer("⏳ Video yuklab olinmoqda, iltimos kuting...")
     
     output_template = "downloaded_video.mp4"
     if os.path.exists(output_template):
@@ -48,6 +50,10 @@ async def handle_url(message: types.Message):
         'format': 'best',
         'outtmpl': output_template,
         'max_filesize': 50 * 1024 * 1024,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
     
     try:
@@ -56,18 +62,18 @@ async def handle_url(message: types.Message):
             
         if os.path.exists(output_template):
             video_file = types.FSInputFile(output_template)
-            await message.answer_video(video_file, caption="Siz so'ragan video muvaffaqiyatli yuklab olindi!")
+            await message.answer_video(video_file, caption="✅ Siz so'ragan video muvaffaqiyatli yuklab olindi!")
         else:
-            await message.answer("Videoni yuklab bo'lmadi.")
+            await message.answer("⚠️ Videoni yuklab bo'lmadi.")
     except Exception as e:
         logging.error(f"Video yuklash xatosi: {e}")
-        await message.answer("Videoni yuklab olishda xatolik yuz berdi.")
+        await message.answer("⚠️ Videoni yuklab olishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Raqam tanlanganda musiqa yuklash (formatni o'zgartirdik)
+# 2. Raqam tanlanganda musiqa yuklash (Qidiruvdan oldin turishi shart!)
 @dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
@@ -79,7 +85,7 @@ async def download_selected_music(message: types.Message):
     results = user_search_results[user_id]
     
     if index < 0 or index >= len(results):
-        await message.answer("Iltimos, 1 dan 10 gacha bo'lgan to'g'ri raqamni yuboring.")
+        await message.answer("⚠️ Iltimos, 1 dan 10 gacha bo'lgan to'g'ri raqamni yuboring.")
         return
         
     title, url = results[index]
@@ -92,11 +98,16 @@ async def download_selected_music(message: types.Message):
             except:
                 pass
 
-    # YouTube'dan muammosiz yuklab olish uchun oddiyroq format sozlamasi
+    # YouTube blokirovkasini chetlab o'tish uchun maxsus sozlamalar
     ydl_opts = {
-        'format': '18',  # YouTube'ning 360p mp4 formati (audio va videosi birga, hech qanday xatolik bermaydi)
-        'outtmpl': 'downloaded_audio.mp4',
+        'format': 'bestaudio/best',
+        'outtmpl': 'downloaded_audio.%(ext)s',
         'max_filesize': 50 * 1024 * 1024,
+        'noplaylist': True,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
     
     downloaded_file = None
@@ -107,7 +118,6 @@ async def download_selected_music(message: types.Message):
             
         if downloaded_file and os.path.exists(downloaded_file):
             audio_input = types.FSInputFile(downloaded_file)
-            # Video formatida yuklab olib audio sifatida yuboramiz (Telegram uni musiqa/video sifatida ochib beradi)
             await message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
             update_ytdlp()
@@ -139,6 +149,10 @@ async def search_music(message: types.Message):
     ydl_opts = {
         'extract_flat': True,
         'skip_download': True,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
     
     try:
@@ -153,7 +167,7 @@ async def search_music(message: types.Message):
                 entries = info.get('entries', [])
                 
         if not entries:
-            await message.answer("Hech narsa topilmadi.")
+            await message.answer("⚠️ Hech narsa topilmadi.")
             await processing_msg.delete()
             return
             
@@ -188,14 +202,14 @@ async def search_music(message: types.Message):
         
     except Exception as e:
         logging.error(f"Qidiruv xatosi: {e}")
-        await message.answer("Qidirish jarayonida xatolik yuz berdi.")
+        await message.answer("⚠️ Qidirish jarayonida xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
 
 # 4. Shazam orqali musiqa aniqlash
 @dp.message(F.voice | F.audio)
 async def handle_audio(message: types.Message):
-    processing_msg = await message.answer("Qo'shiq qidirilmoqda, iltimos kuting...")
+    processing_msg = await message.answer("🎤 Qo'shiq qidirilmoqda, iltimos kuting...")
     audio_file_name = "temp_audio.ogg"
     
     try:
@@ -213,12 +227,12 @@ async def handle_audio(message: types.Message):
             track = out["track"]
             title = track.get("title", "Noma'lum")
             artist = track.get("subtitle", "Noma'lum ijrochi")
-            await message.answer(f"Topildi!\n\nQo'shiq: {title}\nIjrochi: {artist}")
+            await message.answer(f"✅ Topildi!\n\nQo'shiq: {title}\nIjrochi: {artist}")
         else:
-            await message.answer("Kechirasiz, bu musiqani aniqlab bo'lmadi.")
+            await message.answer("⚠️ Kechirasiz, bu musiqani aniqlab bo'lmadi.")
     except Exception as e:
         logging.error(f"Shazam xatosi: {e}")
-        await message.answer("Musiqani aniqlashda xatolik yuz berdi.")
+        await message.answer("⚠️ Musiqani aniqlashda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
         if os.path.exists(audio_file_name):
