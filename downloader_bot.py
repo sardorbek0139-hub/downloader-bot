@@ -22,7 +22,7 @@ URL_REGEX = r'https?://[^\s]+'
 # Har bir foydalanuvchi uchun qidiruv natijalarini saqlash
 user_search_results = {}
 
-# Flask serverini yaratamiz
+# Flask serverini yaratamiz (Render time out bermasligi uchun)
 app = Flask(__name__)
 
 @app.route("/", methods=["GET", "HEAD"])
@@ -37,8 +37,8 @@ def run_web():
 @dp.message(Command('start'))
 async def send_welcome(message: types.Message):
   await message.answer(
-      "Salom! Menga istalgan qo'shiq nomini yozib yuboring (masalan: `Osmon Navro'z`)"
-      " yoki ijtimoiy tarmoq havolasini yuboring, uni yuklab beraman."
+      "Salom! Menga qo'shiq nomini yozib yuboring (masalan: `Osmon Navro'z`), "
+      "men uni SoundCloud'dan qidirib, yuklab beraman!"
   )
 
 
@@ -50,17 +50,15 @@ async def handle_message(message: types.Message):
     await download_and_send_media(message, text)
   else:
     waiting_msg = await message.answer(
-        f"🔍 '{text}' bo'yicha qidirilmoqda..."
+        f"🔍 '{text}' SoundCloud'dan qidirilmoqda..."
     )
 
     try:
+      # SoundCloud'dan 10 ta natija qidirish
       ydl_opts = {
           'extract_flat': True, 
           'quiet': True, 
-          'default_search': 'ytsearch10',
-          'http_headers': {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          }
+          'default_search': 'scsearch10'
       }
       with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(text, download=False)
@@ -74,12 +72,19 @@ async def handle_message(message: types.Message):
         )
         return
 
-      results_text = f"🔍 <b>'{text}'</b> bo'yicha topilgan natijalar:\n\n"
+      results_text = f"🔍 <b>'{text}'</b> bo'yicha SoundCloud natijalari:\n\n"
       user_links = []
 
       for i, entry in enumerate(entries, 1):
         title = entry.get('title', 'Nomaʼlum')
-        url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
+        url = entry.get('url')
+        if not url and 'id' in entry:
+            url = f"https://soundcloud.com/{entry.get('uploader', '')}/{entry.get('id')}"
+        
+        # Agar url to'g'ridan-to'g'ri bo'lmasa, ydl taminlagan webpage_url ni olamiz
+        if not url or not url.startswith('http'):
+            url = entry.get('webpage_url', '')
+
         user_links.append(url)
         results_text += f"{i}. {title}\n"
 
@@ -129,7 +134,7 @@ async def callback_download(callback: types.CallbackQuery):
   url = links[index]
   await callback.answer("Musiqa yuklab olinmoqda, kuting...")
   
-  status_msg = await callback.message.answer("📥 Yuklab olinmoqda va yuborilmoqda...")
+  status_msg = await callback.message.answer("📥 SoundCloud'dan yuklab olinmoqda...")
   
   await download_and_send_media(status_msg, url, edit_msg=True)
 
@@ -142,9 +147,6 @@ async def download_and_send_media(message: types.Message, url: str, edit_msg=Fal
       'format': 'bestaudio/best',
       'outtmpl': output_template,
       'ffmpeg_location': ffmpeg_path,
-      'http_headers': {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
       'postprocessors': [{
           'key': 'FFmpegExtractAudio',
           'preferredcodec': 'mp3',
