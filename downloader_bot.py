@@ -58,7 +58,56 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Matn orqali musiqa qidirish
+# 2. MUHIM: Raqam yuborilganda ishlaydigan qism (oldinda turishi shart)
+@dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
+async def download_selected_music(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in user_search_results:
+        await message.answer("Avval qo'shiq nomini yozib qidiruv amalga oshiring!")
+        return
+        
+    index = int(message.text) - 1
+    results = user_search_results[user_id]
+    
+    if index < 0 or index >= len(results):
+        await message.answer("Iltimos, 1 dan 10 gacha bo'lgan to'g'ri raqamni yuboring.")
+        return
+        
+    title, url = results[index]
+    processing_msg = await message.answer(f"🎵 '{title}' yuklab olinmoqda, kuting...")
+    
+    audio_filename = "downloaded_audio.m4a"
+    if os.path.exists(audio_filename):
+        os.remove(audio_filename)
+
+    ydl_opts = {
+        'format': 'bestaudio[ext=m4a]/bestaudio',
+        'outtmpl': audio_filename,
+        'max_filesize': 50 * 1024 * 1024,
+        'noplaylist': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+            
+        if os.path.exists(audio_filename):
+            audio_input = types.FSInputFile(audio_filename)
+            await message.answer_audio(audio_input, caption=f"🎵 {title}")
+        else:
+            await message.answer("Musiqani yuklab bo'lmadi.")
+    except Exception as e:
+        logging.error(f"Audio yuklash xatoligi: {e}")
+        await message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
+    finally:
+        await processing_msg.delete()
+        if os.path.exists(audio_filename):
+            try:
+                os.remove(audio_filename)
+            except:
+                pass
+
+# 3. Matn orqali musiqa qidirish
 @dp.message(F.text & ~F.text.startswith("/") & ~F.text.startswith("http"))
 async def search_music(message: types.Message):
     query = message.text.strip()
@@ -104,56 +153,6 @@ async def search_music(message: types.Message):
         await message.answer("Qidirishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
-
-# 3. Raqam yuborilganda FFmpeg TALab ETMAYDIGAN usulda audio yuklab berish
-@dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
-async def download_selected_music(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in user_search_results:
-        await message.answer("Avval qo'shiq nomini yozib qidiruv amalga oshiring!")
-        return
-        
-    index = int(message.text) - 1
-    results = user_search_results[user_id]
-    
-    if index < 0 or index >= len(results):
-        await message.answer("Iltimos, 1 dan 10 gacha bo'lgan to'g'ri raqamni yuboring.")
-        return
-        
-    title, url = results[index]
-    processing_msg = await message.answer(f"🎵 '{title}' yuklab olinmoqda, kuting...")
-    
-    audio_filename = "downloaded_audio.m4a"
-    if os.path.exists(audio_filename):
-        os.remove(audio_filename)
-
-    # To'g'ridan-to'g'ri tayyor m4a audio faylini tortamiz (konvertatsiya shart emas)
-    ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio',
-        'outtmpl': audio_filename,
-        'max_filesize': 50 * 1024 * 1024,
-        'noplaylist': True,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-            
-        if os.path.exists(audio_filename):
-            audio_input = types.FSInputFile(audio_filename)
-            await message.answer_audio(audio_input, caption=f"🎵 {title}")
-        else:
-            await message.answer("Musiqani yuklab bo'lmadi.")
-    except Exception as e:
-        logging.error(f"Audio yuklash xatoligi: {e}")
-        await message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
-    finally:
-        await processing_msg.delete()
-        if os.path.exists(audio_filename):
-            try:
-                os.remove(audio_filename)
-            except:
-                pass
 
 # 4. Shazam orqali musiqa tanish
 @dp.message(F.voice | F.audio)
