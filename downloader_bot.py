@@ -7,7 +7,6 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from shazamio import Shazam
 import yt_dlp
 
-# Bot ishga tushishi bilan yt-dlp ni avtomatik yangilash
 def update_ytdlp():
     try:
         subprocess.run(["pip", "install", "--upgrade", "yt-dlp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -68,7 +67,7 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Raqam yuborilganda musiqani yuklab berish
+# 2. MUHIM: Raqam yuborilganda musiqani yuklab berish (Qidiruvdan oldin turishi shart!)
 @dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
@@ -84,7 +83,7 @@ async def download_selected_music(message: types.Message):
         return
         
     title, url = results[index]
-    processing_msg = await message.answer(f"{title} yuklab olinmoqda, kuting...")
+    processing_msg = await message.answer(f"🎵 '{title}' yuklab olinmoqda, kuting...")
     
     for f in os.listdir("."):
         if f.startswith("downloaded_audio"):
@@ -109,7 +108,6 @@ async def download_selected_music(message: types.Message):
             audio_input = types.FSInputFile(downloaded_file)
             await message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
-            # Agar yuklay olmasa, avtomatik yangilab bir marta qayta urinib ko'ramiz
             update_ytdlp()
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -118,10 +116,10 @@ async def download_selected_music(message: types.Message):
                 audio_input = types.FSInputFile(downloaded_file)
                 await message.answer_audio(audio_input, caption=f"🎵 {title}")
             else:
-                await message.answer("Musiqani yuklab bo'lmadi.")
+                await message.answer("⚠️ Musiqani yuklab bo'lmadi. Boshqasini tanlab ko'ring.")
     except Exception as e:
         logging.error(f"Audio yuklash xatoligi: {e}")
-        await message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
+        await message.answer("⚠️ Musiqani yuklab olishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
         if downloaded_file and os.path.exists(downloaded_file):
@@ -130,11 +128,11 @@ async def download_selected_music(message: types.Message):
             except:
                 pass
 
-# 3. Matn orqali musiqa qidirish
+# 3. Matn orqali musiqa qidirish (Faqat raqam bo'lmagan matnlar uchun)
 @dp.message(F.text & ~F.text.startswith("/") & ~F.text.startswith("http"))
 async def search_music(message: types.Message):
     query = message.text.strip()
-    processing_msg = await message.answer(f"'{query}' bo'yicha qidirilmoqda...")
+    processing_msg = await message.answer(f"🔍 '{query}' bo'yicha qidirilmoqda...")
     
     ydl_opts = {
         'extract_flat': True,
@@ -157,7 +155,7 @@ async def search_music(message: types.Message):
             await processing_msg.delete()
             return
             
-        text = f"{query}\n\n"
+        text = f"🔎 '{query}' bo'yicha topilgan natijalar:\n\n"
         results = []
         
         kb_builder = ReplyKeyboardBuilder()
@@ -176,13 +174,14 @@ async def search_music(message: types.Message):
                 duration_str = "0:00"
                 
             results.append((title, url))
-            text += f"{i}. {title} {duration_str}\n"
+            text += f"{i}. {title} — {duration_str}\n"
             kb_builder.add(types.KeyboardButton(text=str(i)))
             
         user_search_results[message.from_user.id] = results
         kb_builder.adjust(5, 5)
         keyboard = kb_builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
         
+        text += "\n👇 Yuklab olish uchun pastdagi tugmalardan raqamni tanlang yoki yuboring!"
         await message.answer(text, reply_markup=keyboard)
         
     except Exception as e:
