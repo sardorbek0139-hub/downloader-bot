@@ -1,10 +1,20 @@
 import logging
 import os
+import subprocess
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from shazamio import Shazam
 import yt_dlp
+
+# Bot ishga tushishi bilan yt-dlp ni avtomatik yangilash
+def update_ytdlp():
+    try:
+        subprocess.run(["pip", "install", "--upgrade", "yt-dlp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print(f"Yangilashda xatolik: {e}")
+
+update_ytdlp()
 
 TOKEN = "8995513531:AAGgkoOeJXFKdXoF5oPt25gliipK_ZqlZ14"
 
@@ -58,7 +68,7 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Raqam yuborilganda musiqani yuklab berish (Qidiruvdan oldin tekshiriladi!)
+# 2. Raqam yuborilganda musiqani yuklab berish
 @dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
@@ -99,7 +109,16 @@ async def download_selected_music(message: types.Message):
             audio_input = types.FSInputFile(downloaded_file)
             await message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
-            await message.answer("Musiqani yuklab bo'lmadi.")
+            # Agar yuklay olmasa, avtomatik yangilab bir marta qayta urinib ko'ramiz
+            update_ytdlp()
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                downloaded_file = ydl.prepare_filename(info)
+            if downloaded_file and os.path.exists(downloaded_file):
+                audio_input = types.FSInputFile(downloaded_file)
+                await message.answer_audio(audio_input, caption=f"🎵 {title}")
+            else:
+                await message.answer("Musiqani yuklab bo'lmadi.")
     except Exception as e:
         logging.error(f"Audio yuklash xatoligi: {e}")
         await message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
@@ -128,32 +147,42 @@ async def search_music(message: types.Message):
             entries = info.get('entries', [])
             
         if not entries:
+            update_ytdlp()
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"ytsearch10:{query}", download=False)
+                entries = info.get('entries', [])
+                
+        if not entries:
             await message.answer("Hech narsa topilmadi.")
             await processing_msg.delete()
             return
             
-        text = f"🔍 {query} bo'yicha topilgan natijalar:\n\n"
+        text = f"{query}\n\n"
         results = []
         
-        # Oson bosish uchun pastki klaviatura (ReplyKeyboardMarkup) tugmalarini yasash
         kb_builder = ReplyKeyboardBuilder()
         
         for i, entry in enumerate(entries[:10], 1):
             title = entry.get('title', 'Noma\'lum')
             vid_id = entry.get('id')
             url = f"https://www.youtube.com/watch?v={vid_id}"
-            results.append((title, url))
             
-            text += f"{i}. {title}\n"
+            duration_sec = entry.get('duration')
+            if duration_sec:
+                mins = int(duration_sec) // 60
+                secs = int(duration_sec) % 60
+                duration_str = f"{mins}:{secs:02d}"
+            else:
+                duration_str = "0:00"
+                
+            results.append((title, url))
+            text += f"{i}. {title} {duration_str}\n"
             kb_builder.add(types.KeyboardButton(text=str(i)))
             
         user_search_results[message.from_user.id] = results
-        
-        # Tugmalarni 5 tadan qatorlarga bo'lish
         kb_builder.adjust(5, 5)
         keyboard = kb_builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
         
-        text += "\n👇 Yuklab olish uchun pastdagi tugmalardan raqamni tanlang yoki yuboring!"
         await message.answer(text, reply_markup=keyboard)
         
     except Exception as e:
@@ -173,9 +202,9 @@ async def handle_audio(message: types.Message):
         file = await bot.get_file(file_id)
         file_path = file.file_path
         
-        downloaded_file_bytes = await bot.download_file(file_path)
+        download_bytes = await bot.download_file(file_path)
         with open(audio_file_name, "wb") as f:
-            f.write(downloaded_file_bytes.read())
+            f.write(download_bytes.read())
             
         out = await shazam.recognize(audio_file_name)
         
