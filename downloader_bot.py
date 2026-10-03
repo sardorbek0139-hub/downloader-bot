@@ -13,16 +13,21 @@ logging.basicConfig(level=logging.INFO)
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
+    # /start bosilganda eskidan qolgan pastdagi tugmalarni o'chirib yuborish uchun reply_markup=types.ReplyKeyboardRemove() qo'shildi
     await message.answer(
         "Assalomu alaykum!\n\n"
-        "🔗 Menga YouTube, Instagram yoki TikTok havolasini yuboring — men sizga videoni yuklab beraman!"
+        "🔗 Menga YouTube, Instagram yoki TikTok havolasini yuboring — men sizga videoni yuklab beraman!",
+        reply_markup=types.ReplyKeyboardRemove()
     )
 
 # Havola (URL) orqali video yuklash
 @dp.message(F.text & (F.text.startswith("http://") | F.text.startswith("https://")))
 async def handle_url(message: types.Message):
     url = message.text.strip()
-    processing_msg = await message.answer("Video yuklab olinmoqda, iltimos biroz kuting...")
+    processing_msg = await message.answer(
+        "Video yuklab olinmoqda, iltimos biroz kuting...",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
     
     output_template = "downloaded_video.mp4"
     if os.path.exists(output_template):
@@ -31,7 +36,7 @@ async def handle_url(message: types.Message):
     ydl_opts = {
         'format': 'best',
         'outtmpl': output_template,
-        'max_filesize': 50 * 1024 * 1024, # 50 MB gacha bo'lgan videolar uchun
+        'max_filesize': 50 * 1024 * 1024, # 50 MB gacha
     }
     
     try:
@@ -40,12 +45,17 @@ async def handle_url(message: types.Message):
             
         if os.path.exists(output_template):
             video_file = types.FSInputFile(output_template)
-            await message.answer_video(video_file, caption="Marhamat, siz so'ragan video! 🎬")
+            # Video yuborilganda ham pastdagi klaviaturani o'chirib turamiz
+            await message.answer_video(
+                video_file, 
+                caption="Marhamat, siz so'ragan video! 🎬",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
         else:
-            await message.answer("Kechirasiz, videoni yuklab bo'lmadi.")
+            await message.answer("Kechirasiz, videoni yuklab bo'lmadi.", reply_markup=types.ReplyKeyboardRemove())
     except Exception as e:
         logging.error(f"Video yuklashda xatolik: {e}")
-        await message.answer("Videoni yuklab olishda xatolik yuz berdi. Havola to'g'riligiga ishonch hosil qiling.")
+        await message.answer("Videoni yuklab olishda xatolik yuz berdi. Havola to'g'riligiga ishonch hosil qiling.", reply_markup=types.ReplyKeyboardRemove())
     finally:
         await processing_msg.delete()
         if os.path.exists(output_template):
@@ -54,10 +64,13 @@ async def handle_url(message: types.Message):
             except:
                 pass
 
-# Boshqa turdagi xabarlar uchun ogohlantirish
+# Boshqa turdagi matnlar uchun
 @dp.message()
 async def other_messages(message: types.Message):
-    await message.answer("Iltimos, faqat video havolasini (URL) yuboring!")
+    await message.answer(
+        "Iltimos, faqat video havolasini (URL) yuboring!",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
 
 if __name__ == "__main__":
     import asyncio
