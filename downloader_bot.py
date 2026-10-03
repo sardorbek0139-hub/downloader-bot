@@ -1,201 +1,102 @@
-import asyncio
+import logging
 import os
-import re
-import threading
-from aiogram import Bot, Dispatcher, F, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
-from flask import Flask
-from yt_dlp import YoutubeDL
-import imageio_ffmpeg
+from shazamio import Shazam
+import yt_dlp
 
-# Render uchun ffmpeg yo'lini avtomatik topish
-ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+# Sizning bot tokeningiz kiritildi
+TOKEN = "8995513531:AAGgkoOeJXFKdXoF5oPt25gliipK_ZqlZ14"
 
-BOT_TOKEN = "8995513531:AAGgkooEJXFkdXoF5OpT25gliipK_Zq1Z14"
-
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
+shazam = Shazam()
 
-URL_REGEX = r'https?://[^\s]+'
+logging.basicConfig(level=logging.INFO)
 
-# Har bir foydalanuvchi uchun qidiruv natijalarini saqlash
-user_search_results = {}
-
-# Flask serverini yaratamiz (Render time out bermasligi uchun)
-app = Flask(__name__)
-
-@app.route("/", methods=["GET", "HEAD"])
-def home():
-    return "Bot is running!"
-
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-
-@dp.message(Command('start'))
-async def send_welcome(message: types.Message):
-  await message.answer(
-      "Salom! Menga qo'shiq nomini yozib yuboring (masalan: `Osmon Navro'z`), "
-      "men uni SoundCloud'dan qidirib, yuklab beraman!"
-  )
-
-
-@dp.message(F.text)
-async def handle_message(message: types.Message):
-  text = message.text.strip()
-
-  if re.match(URL_REGEX, text):
-    await download_and_send_media(message, text)
-  else:
-    waiting_msg = await message.answer(
-        f"🔍 '{text}' SoundCloud'dan qidirilmoqda..."
+@dp.message(Command("start"))
+async def start_handler(message: types.Message):
+    await message.answer(
+        "👋 Assalomu alaykum!\n\n"
+        "📥 Menga YouTube, Instagram yoki TikTok **havolasini** yuboring — videoni yuklab beraman.\n"
+        "🎵 Yoki musiqa nomi, audio fayl / ovozli xabar yuboring — Shazam orqali tanib beraman!"
     )
 
-    try:
-      # SoundCloud'dan 10 ta natija qidirish
-      ydl_opts = {
-          'extract_flat': True, 
-          'quiet': True, 
-          'default_search': 'scsearch10'
-      }
-      with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(text, download=False)
-        entries = info.get('entries', [])
-
-      if not entries:
-        await bot.edit_message_text(
-            "❌ Hech narsa topilmadi.",
-            chat_id=message.chat.id,
-            message_id=waiting_msg.message_id,
-        )
-        return
-
-      results_text = f"🔍 <b>'{text}'</b> bo'yicha SoundCloud natijalari:\n\n"
-      user_links = []
-
-      for i, entry in enumerate(entries, 1):
-        title = entry.get('title', 'Nomaʼlum')
-        url = entry.get('url')
-        if not url and 'id' in entry:
-            url = f"https://soundcloud.com/{entry.get('uploader', '')}/{entry.get('id')}"
+# 1. Havola (Link) orqali video yuklash qismi
+@dp.message(F.text & (F.text.startswith("http://") | F.text.startswith("https://")))
+async def handle_url(message: types.Message):
+    url = message.text.strip()
+    processing_msg = await message.answer("⏳ Video yuklab olinmoqda, biroz kuting...")
+    
+    output_template = "downloaded_video.mp4"
+    if os.path.exists(output_template):
+        os.remove(output_template)
         
-        # Agar url to'g'ridan-to'g'ri bo'lmasa, ydl taminlagan webpage_url ni olamiz
-        if not url or not url.startswith('http'):
-            url = entry.get('webpage_url', '')
-
-        user_links.append(url)
-        results_text += f"{i}. {title}\n"
-
-      user_search_results[message.from_user.id] = user_links
-
-      keyboard_buttons = [
-          InlineKeyboardButton(text=str(i), callback_data=f"dl_{i}")
-          for i in range(1, len(entries) + 1)
-      ]
-      keyboard = InlineKeyboardMarkup(
-          inline_keyboard=[
-              keyboard_buttons[:5],
-              keyboard_buttons[5:],
-          ]
-      )
-
-      await bot.edit_message_text(
-          results_text,
-          chat_id=message.chat.id,
-          message_id=waiting_msg.message_id,
-          reply_markup=keyboard,
-          parse_mode='HTML',
-      )
-
+    ydl_opts = {
+        'format': 'best',
+        'outtmpl': output_template,
+        'max_filesize': 50 * 1024 * 1024, # 50MB gacha cheklov
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+            
+        if os.path.exists(output_template):
+            video_file = types.FSInputFile(output_template)
+            await message.answer_video(video_file, caption="✅ Marhamat, siz so'ragan video!")
+        else:
+            await message.answer("❌ Videoni yuklab bo'lmadi. Havolani tekshirib ko'ring.")
+            
     except Exception as e:
-      await bot.edit_message_text(
-          f"❌ Qidirishda xatolik yuz berdi: {e}",
-          chat_id=message.chat.id,
-          message_id=waiting_msg.message_id,
-      )
+        logging.error(f"Video yuklashda xatolik: {e}")
+        await message.answer("⚠️ Videoni yuklab olishda xatolik yuz berdi (hajmi katta bo'lishi mumkin).")
+        
+    finally:
+        await processing_msg.delete()
+        if os.path.exists(output_template):
+            os.remove(output_template)
 
+# 2. Ovozli xabar yoki audio orqali Shazam'da musiqa tanish qismi
+@dp.message(F.voice | F.audio)
+async def handle_audio(message: types.Message):
+    processing_msg = await message.answer("🔍 Qo'shiq qidirilmoqda, biroz kuting...")
+    audio_file_name = "temp_audio.ogg"
+    
+    try:
+        file_id = message.voice.file_id if message.voice else message.audio.file_id
+        file = await bot.get_file(file_id)
+        file_path = file.file_path
+        
+        downloaded_file_bytes = await bot.download_file(file_path)
+        
+        with open(audio_file_name, "wb") as f:
+            f.write(downloaded_file_bytes.read())
+            
+        out = await shazam.recognize(audio_file_name)
+        
+        if out and "track" in out:
+            track = out["track"]
+            title = track.get("title", "Noma'lum")
+            artist = track.get("subtitle", "Noma'lum artist")
+            
+            await message.answer(
+                f"✅ **Topildi!**\n\n"
+                f"🎵 Qo'shiq: {title}\n"
+                f"🎤 Ijrochi: {artist}"
+            )
+        else:
+            await message.answer("❌ Kechirasiz, bu musiqani aniqlab bo'lmadi.")
+            
+    except Exception as e:
+        logging.error(f"Shazam xatoligi: {e}")
+        await message.answer("⚠️ Musiqani aniqlashda xatolik yuz berdi.")
+        
+    finally:
+        await processing_msg.delete()
+        if os.path.exists(audio_file_name):
+            os.remove(audio_file_name)
 
-@dp.callback_query(F.data.startswith('dl_'))
-async def callback_download(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  if user_id not in user_search_results:
-    await callback.answer("Eski qidiruv natijasi. Qaytadan qidiring.", show_alert=True)
-    return
-
-  index = int(callback.data.split('_')[1]) - 1
-  links = user_search_results[user_id]
-
-  if index >= len(links):
-    await callback.answer("Topilmadi.", show_alert=True)
-    return
-
-  url = links[index]
-  await callback.answer("Musiqa yuklab olinmoqda, kuting...")
-  
-  status_msg = await callback.message.answer("📥 SoundCloud'dan yuklab olinmoqda...")
-  
-  await download_and_send_media(status_msg, url, edit_msg=True)
-
-
-async def download_and_send_media(message: types.Message, url: str, edit_msg=False):
-  output_template = 'downloads/%(id)s.%(ext)s'
-  os.makedirs('downloads', exist_ok=True)
-
-  ydl_opts = {
-      'format': 'bestaudio/best',
-      'outtmpl': output_template,
-      'ffmpeg_location': ffmpeg_path,
-      'postprocessors': [{
-          'key': 'FFmpegExtractAudio',
-          'preferredcodec': 'mp3',
-          'preferredquality': '192',
-      }],
-      'quiet': True,
-  }
-
-  file_path = None
-  try:
-    with YoutubeDL(ydl_opts) as ydl:
-      info = ydl.extract_info(url, download=True)
-      filename = ydl.prepare_filename(info)
-      file_path = os.path.splitext(filename)[0] + '.mp3'
-      title = info.get('title', 'audio')
-
-    if os.path.exists(file_path):
-      audio = FSInputFile(file_path)
-      if edit_msg:
-        await message.answer_audio(audio, caption=title)
-        await message.delete()
-      else:
-        await message.answer_audio(audio, caption=title)
-    else:
-      if edit_msg:
-        await message.edit_text("⚠️ Musiqani yuklab bo'lmadi.")
-      else:
-        await message.answer("⚠️ Musiqani yuklab bo'lmadi.")
-  except Exception as e:
-    err_text = f"⚠️ Xatolik yuz berdi: {str(e)[:100]}"
-    if edit_msg:
-      await message.edit_text(err_text)
-    else:
-      await message.answer(err_text)
-  finally:
-    if file_path and os.path.exists(file_path):
-      try:
-        os.remove(file_path)
-      except:
-        pass
-
-
-async def main():
-  web_thread = threading.Thread(target=run_web)
-  web_thread.daemon = True
-  web_thread.start()
-
-  await dp.start_polling(bot)
-
-
-if __name__ == '__main__':
-  asyncio.run(main())
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(dp.start_polling(bot))
