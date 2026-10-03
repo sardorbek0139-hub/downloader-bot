@@ -48,7 +48,7 @@ async def handle_url(message: types.Message):
         'format': 'best',
         'outtmpl': output_template,
         'max_filesize': 50 * 1024 * 1024,
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        'extractor_args': {'youtube': {'player_client': ['ios', 'mweb', 'android']}},
     }
     
     try:
@@ -98,7 +98,7 @@ async def download_selected_music(message: types.Message):
         'outtmpl': 'downloaded_audio.%(ext)s',
         'max_filesize': 50 * 1024 * 1024,
         'noplaylist': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        'extractor_args': {'youtube': {'player_client': ['ios', 'mweb', 'android']}},
     }
     
     downloaded_file = None
@@ -132,7 +132,7 @@ async def search_music(message: types.Message):
     ydl_opts = {
         'extract_flat': True,
         'skip_download': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        'extractor_args': {'youtube': {'player_client': ['ios', 'mweb', 'android']}},
     }
     
     try:
