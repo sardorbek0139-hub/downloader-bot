@@ -14,7 +14,6 @@ shazam = Shazam()
 
 logging.basicConfig(level=logging.INFO)
 
-# Foydalanuvchilarning qidiruv natijalarini vaqtincha saqlash uchun
 user_search_results = {}
 
 @dp.message(Command("start"))
@@ -59,7 +58,7 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Shazam orqali musiqa tanish (Ovozli xabar yoki audio)
+# 2. Shazam orqali musiqa tanish
 @dp.message(F.voice | F.audio)
 async def handle_audio(message: types.Message):
     processing_msg = await message.answer("Qo'shiq qidirilmoqda, biroz kuting...")
@@ -91,7 +90,7 @@ async def handle_audio(message: types.Message):
         if os.path.exists(audio_file_name):
             os.remove(audio_file_name)
 
-# 3. Matn orqali musiqa qidirish (Faqat oddiy so'zlar uchun)
+# 3. Matn orqali musiqa qidirish
 @dp.message(F.text & ~F.text.startswith("/"))
 async def search_music(message: types.Message):
     query = message.text.strip()
@@ -123,11 +122,11 @@ async def search_music(message: types.Message):
             results.append((title, url))
             
             text += f"{i}. {title}\n"
-            # Inline tugma yaratamiz (callback_data ichida index saqlanadi)
+            # Inline tugma qo'shamiz (bu ekranning ostida emas, xabar ostida chiqadi)
             kb_builder.add(types.InlineKeyboardButton(text=str(i), callback_data=f"dl_{i-1}"))
             
         user_search_results[message.from_user.id] = results
-        kb_builder.adjust(5, 5) # Tugmalarni 5 tadan qator qilib joylaymiz
+        kb_builder.adjust(5, 5)
         keyboard = kb_builder.as_markup()
         
         text += "\n👇 Yuklab olish uchun pastdagi tugmalardan birini bosing!"
@@ -139,7 +138,7 @@ async def search_music(message: types.Message):
     finally:
         await processing_msg.delete()
 
-# 4. Inline tugma bosilganda ishlaydigan qism (Hech qachon adashmaydi)
+# 4. Inline tugma bosilganda ishlaydigan qism
 @dp.callback_query(F.data.startswith("dl_"))
 async def download_selected_music(callback: types.CallbackQuery):
     user_id = callback.from_user.id
