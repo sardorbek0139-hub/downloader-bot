@@ -22,7 +22,7 @@ async def start_handler(message: types.Message):
     await message.answer(
         "Assalomu alaykum!\n\n"
         "🔗 YouTube, Instagram, TikTok havolasini yuboring — videoni yuklab beraman.\n"
-        "🎵 Qo'shiq nomini yozing — internetdan 10 ta variant topib beraman.\n"
+        "🎵 Qo'shiq nomini yozing — 10 ta variant chiqaraman.\n"
         "🎙 Audio yoki ovozli xabar yuboring — Shazam orqali tanib beraman!"
     )
 
@@ -59,23 +59,23 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Matn orqali musiqa qidirish (Internet bazasi orqali xatoliksiz)
+# 2. Matn orqali musiqa qidirish
 @dp.message(F.text & ~F.text.startswith("/") & ~F.text.startswith("http"))
 async def search_music(message: types.Message):
     query = message.text.strip()
-    processing_msg = await message.answer(f"'{query}' internetdan qidirilmoqda...")
+    processing_msg = await message.answer(f"'{query}' bo'yicha qidirilmoqda...")
+    
+    ydl_opts = {
+        'extract_flat': True,
+        'skip_download': True,
+    }
     
     try:
-        api_url = f"https://saavn.dev/api/search/songs?query={query}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    results_data = data.get("data", {}).get("results", [])
-                else:
-                    results_data = []
-
-        if not results_data:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch10:{query}", download=False)
+            entries = info.get('entries', [])
+            
+        if not entries:
             await message.answer("Hech narsa topilmadi.")
             await processing_msg.delete()
             return
@@ -84,24 +84,15 @@ async def search_music(message: types.Message):
         results = []
         kb_builder = ReplyKeyboardBuilder()
         
-        for i, song in enumerate(results_data[:10], 1):
-            title = song.get('name', 'Noma\'lum')
-            artist = song.get('artists', {}).get('primary', [{}])[0].get('name', '')
-            full_title = f"{artist} - {title}" if artist else title
+        for i, entry in enumerate(entries[:10], 1):
+            title = entry.get('title', 'Noma\'lum')
+            vid_id = entry.get('id')
+            url = f"https://www.youtube.com/watch?v={vid_id}"
+            results.append((title, url))
             
-            download_links = song.get('downloadUrl', [])
-            audio_url = download_links[-1].get('url') if download_links else None
+            text += f"{i}. {title}\n"
+            kb_builder.add(types.KeyboardButton(text=str(i)))
             
-            if audio_url:
-                results.append((full_title, audio_url))
-                text += f"{i}. {full_title}\n"
-                kb_builder.add(types.KeyboardButton(text=str(i)))
-            
-        if not results:
-            await message.answer("Topilgan qo'shiqlar uchun yuklab olish havolasi topilmadi.")
-            await processing_msg.delete()
-            return
-
         user_search_results[message.from_user.id] = results
         
         kb_builder.adjust(5, 5)
@@ -116,7 +107,7 @@ async def search_music(message: types.Message):
     finally:
         await processing_msg.delete()
 
-# 3. Raqam yuborilganda musiqani yuborish
+# 3. Raqam yuborilganda musiqani API orqali yuklab berish
 @dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
@@ -131,25 +122,39 @@ async def download_selected_music(message: types.Message):
         await message.answer("Iltimos, 1 dan 10 gacha bo'lgan to'g'ri raqamni yuboring.")
         return
         
-    title, audio_url = results[index]
+    title, url = results[index]
     processing_msg = await message.answer(f"🎵 '{title}' yuklab olinmoqda, kuting...")
     
     audio_filename = "downloaded_song.mp3"
+    if os.path.exists(audio_filename):
+        os.remove(audio_filename)
+
+    success = False
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(audio_url) as resp:
+            # Ishonchli bepul audio konvertatsiya API
+            api_url = f"https://api.fabdl.com/youtube/mp3?url={url}"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            async with session.get(api_url, headers=headers) as resp:
                 if resp.status == 200:
-                    with open(audio_filename, "wb") as f:
-                        f.write(await resp.read())
-                        
-        if os.path.exists(audio_filename):
+                    data = await resp.json()
+                    if data.get("status") == 200:
+                        download_url = data["result"]["download_url"]
+                        async with session.get(download_url) as file_resp:
+                            if file_resp.status == 200:
+                                with open(audio_filename, "wb") as f:
+                                    f.write(await file_resp.read())
+                                success = True
+
+        if success and os.path.exists(audio_filename):
             audio_input = types.FSInputFile(audio_filename)
             await message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
-            await message.answer("Musiqani yuklab bo'lmadi.")
+            await message.answer("⚠️ Musiqani yuklab bo'lmadi. Boshqasini tanlab ko'ring.")
+            
     except Exception as e:
         logging.error(f"Audio yuklash xatoligi: {e}")
-        await message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
+        await message.answer("⚠️ Musiqani yuklab olishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
         if os.path.exists(audio_filename):
