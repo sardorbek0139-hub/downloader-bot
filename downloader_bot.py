@@ -1,6 +1,5 @@
 import logging
 import os
-import aiohttp
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
@@ -26,7 +25,7 @@ async def start_handler(message: types.Message):
         "🎙 Audio yoki ovozli xabar yuboring — Shazam orqali tanib beraman!"
     )
 
-# 1. Havola orqali video yuklash (YouTube, Instagram, TikTok)
+# 1. Havola orqali video yuklash
 @dp.message(F.text & (F.text.startswith("http://") | F.text.startswith("https://")))
 async def handle_url(message: types.Message):
     url = message.text.strip()
@@ -94,7 +93,6 @@ async def search_music(message: types.Message):
             kb_builder.add(types.KeyboardButton(text=str(i)))
             
         user_search_results[message.from_user.id] = results
-        
         kb_builder.adjust(5, 5)
         keyboard = kb_builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
         
@@ -107,7 +105,7 @@ async def search_music(message: types.Message):
     finally:
         await processing_msg.delete()
 
-# 3. Raqam yuborilganda musiqani API orqali yuklab berish
+# 3. Raqam yuborilganda FFmpeg TALab ETMAYDIGAN usulda audio yuklab berish
 @dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
@@ -125,36 +123,30 @@ async def download_selected_music(message: types.Message):
     title, url = results[index]
     processing_msg = await message.answer(f"🎵 '{title}' yuklab olinmoqda, kuting...")
     
-    audio_filename = "downloaded_song.mp3"
+    audio_filename = "downloaded_audio.m4a"
     if os.path.exists(audio_filename):
         os.remove(audio_filename)
 
-    success = False
+    # To'g'ridan-to'g'ri tayyor m4a audio faylini tortamiz (konvertatsiya shart emas)
+    ydl_opts = {
+        'format': 'bestaudio[ext=m4a]/bestaudio',
+        'outtmpl': audio_filename,
+        'max_filesize': 50 * 1024 * 1024,
+        'noplaylist': True,
+    }
+    
     try:
-        async with aiohttp.ClientSession() as session:
-            # Ishonchli bepul audio konvertatsiya API
-            api_url = f"https://api.fabdl.com/youtube/mp3?url={url}"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            async with session.get(api_url, headers=headers) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    if data.get("status") == 200:
-                        download_url = data["result"]["download_url"]
-                        async with session.get(download_url) as file_resp:
-                            if file_resp.status == 200:
-                                with open(audio_filename, "wb") as f:
-                                    f.write(await file_resp.read())
-                                success = True
-
-        if success and os.path.exists(audio_filename):
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+            
+        if os.path.exists(audio_filename):
             audio_input = types.FSInputFile(audio_filename)
             await message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
-            await message.answer("⚠️ Musiqani yuklab bo'lmadi. Boshqasini tanlab ko'ring.")
-            
+            await message.answer("Musiqani yuklab bo'lmadi.")
     except Exception as e:
         logging.error(f"Audio yuklash xatoligi: {e}")
-        await message.answer("⚠️ Musiqani yuklab olishda xatolik yuz berdi.")
+        await message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
         if os.path.exists(audio_filename):
@@ -174,9 +166,9 @@ async def handle_audio(message: types.Message):
         file = await bot.get_file(file_id)
         file_path = file.file_path
         
-        downloaded_file_bytes = await bot.download_file(file_path)
+        download_bytes = await bot.download_file(file_path)
         with open(audio_file_name, "wb") as f:
-            f.write(downloaded_file_bytes.read())
+            f.write(download_bytes.read())
             
         out = await shazam.recognize(audio_file_name)
         
