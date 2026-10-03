@@ -7,14 +7,6 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from shazamio import Shazam
 import yt_dlp
 
-def update_ytdlp():
-    try:
-        subprocess.run(["pip", "install", "--upgrade", "yt-dlp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except:
-        pass
-
-update_ytdlp()
-
 TOKEN = "8995513531:AAGgkoOeJXFKdXoF5oPt25gliipK_ZqlZ14"
 
 bot = Bot(token=TOKEN)
@@ -48,7 +40,6 @@ async def handle_url(message: types.Message):
         'format': 'best',
         'outtmpl': output_template,
         'max_filesize': 50 * 1024 * 1024,
-        'extractor_args': {'youtube': {'player_client': ['ios', 'mweb', 'android']}},
     }
     
     try:
@@ -68,7 +59,7 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Raqam yuborilganda musiqani yuklab berish
+# 2. Raqam yuborilganda musiqani to'g'ridan-to'g'ri AUDIO (MP3) qilib yuborish
 @dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
@@ -84,8 +75,11 @@ async def download_selected_music(message: types.Message):
         return
         
     title, url = results[index]
-    processing_msg = await message.answer(f"🎵 {title} yuklab olinmoqda, kuting...")
+    processing_msg = await message.answer(f"🎵 '{title}' audyoga o'girilmoqda, kuting...")
     
+    audio_filename = "downloaded_audio.mp3"
+    
+    # Oldindan qolgan eski fayllarni tozalash
     for f in os.listdir("."):
         if f.startswith("downloaded_audio"):
             try:
@@ -98,26 +92,29 @@ async def download_selected_music(message: types.Message):
         'outtmpl': 'downloaded_audio.%(ext)s',
         'max_filesize': 50 * 1024 * 1024,
         'noplaylist': True,
-        'extractor_args': {'youtube': {'player_client': ['ios', 'mweb', 'android']}},
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
     }
     
-    downloaded_file = None
+    downloaded_file = "downloaded_audio.mp3"
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            downloaded_file = ydl.prepare_filename(info)
+            ydl.download([url])
             
-        if downloaded_file and os.path.exists(downloaded_file):
+        if os.path.exists(downloaded_file):
             audio_input = types.FSInputFile(downloaded_file)
             await message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
-            await message.answer("Musiqani yuklab bo'lmadi.")
+            await message.answer("Musiqani audyoga o'tkazib bo'lmadi.")
     except Exception as e:
         logging.error(f"Audio yuklash xatoligi: {e}")
-        await message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
+        await message.answer("Musiqani yuklab olishda xatolik yuz berdi. (Serverda FFmpeg o'rnatilganligiga e'tibor bering)")
     finally:
         await processing_msg.delete()
-        if downloaded_file and os.path.exists(downloaded_file):
+        if os.path.exists(downloaded_file):
             try:
                 os.remove(downloaded_file)
             except:
@@ -132,7 +129,6 @@ async def search_music(message: types.Message):
     ydl_opts = {
         'extract_flat': True,
         'skip_download': True,
-        'extractor_args': {'youtube': {'player_client': ['ios', 'mweb', 'android']}},
     }
     
     try:
