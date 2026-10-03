@@ -93,16 +93,16 @@ async def search_music(message: types.Message):
         await message.answer(text)
     except Exception as e:
         logging.error(f"Qidirish xatoligi: {e}")
-        await message.answer("⚠️️ Qidirishda xatolik yuz berdi.")
+        await message.answer("⚠️ Qidirishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
 
-# 3. Raqam yuborilganda musiqani yuklab berish
+# 3. Raqam yuborilganda musiqani yuklab berish (FFmpeg'siz versiya)
 @dp.message(F.text.isdigit())
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
     if user_id not in user_search_results:
-        await message.answer("⚠️ Avval qo'shiq nomini yozib, qidiruv amalga oshiring!")
+        await message.answer("⚠️️ Avval qo'shiq nomini yozib, qidiruv amalga oshiring!")
         return
         
     index = int(message.text) - 1
@@ -115,30 +115,26 @@ async def download_selected_music(message: types.Message):
     title, url = results[index]
     processing_msg = await message.answer(f"⏳ **{title}** yuklab olinmoqda, kuting...")
     
-    output_audio = "audio.mp3"
+    output_audio = "downloaded_audio.m4a"
     if os.path.exists(output_audio):
         os.remove(output_audio)
         
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': 'audio',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '128',
-        }],
+        'format': 'bestaudio',
+        'outtmpl': 'downloaded_audio.%(ext)s',
         'max_filesize': 50 * 1024 * 1024,
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
             
-        # Topilgan mp3 faylni topish
-        final_file = "audio.mp3"
-        if os.path.exists(final_file):
-            audio_input = types.FSInputFile(final_file)
+        if os.path.exists(filename):
+            audio_input = types.FSInputFile(filename)
             await message.answer_audio(audio_input, caption=f"🎵 {title}")
+            if os.path.exists(filename):
+                os.remove(filename)
         else:
             await message.answer("❌ Musiqani yuklab bo'lmadi.")
     except Exception as e:
@@ -146,8 +142,6 @@ async def download_selected_music(message: types.Message):
         await message.answer("⚠️ Musiqani yuklab olishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
-        if os.path.exists("audio.mp3"):
-            os.remove("audio.mp3")
 
 # 4. Shazam orqali musiqa tanish
 @dp.message(F.voice | F.audio)
@@ -175,7 +169,7 @@ async def handle_audio(message: types.Message):
             await message.answer("❌ Kechirasiz, bu musiqani aniqlab bo'lmadi.")
     except Exception as e:
         logging.error(f"Shazam xatoligi: {e}")
-        await message.answer("⚠️️ Musiqani aniqlashda xatolik yuz berdi.")
+        await message.answer("⚠️ Musiqani aniqlashda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
         if os.path.exists(audio_file_name):
