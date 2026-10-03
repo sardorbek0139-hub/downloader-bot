@@ -8,307 +8,183 @@ from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarku
 from flask import Flask
 from yt_dlp import YoutubeDL
 
-BOT_TOKEN = "8995513531:AAGgkoOeJXFKdXoF5oPt25gliipK_ZqlZ14"
+BOT_TOKEN = "8995513531:AAGgkooEJXFkdXoF5OpT25gliipK_Zq1Z14"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-URL_REGEX = r"https?://[^\s]+"
-user_links = {}
+URL_REGEX = r'https?://[^\s]+'
+
+# Har bir foydalanuvchi uchun qidiruv natijalarini saqlash
 user_search_results = {}
 
-# --- RENDER TIMEOUT BERMASLIGI UCHIN FLASK SERVER ---
+# Flask serverini yaratamiz (Render time out bermasligi uchun)
 app = Flask(__name__)
-
 
 @app.route("/", methods=["GET", "HEAD"])
 def home():
-  return "Bot is running!", 200
-
+    return "Bot is running!"
 
 def run_web():
-  app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 
-# --- 1. HAVOLADAN VIDEONI YUKLAB OLISH ---
-def download_video(url: str):
-  out_template = "downloads/%(id)s.%(ext)s"
-  ydl_opts = {
-      "format": "best/bestvideo+bestaudio",
-      "outtmpl": out_template,
-      "max_filesize": 50 * 1024 * 1024,
-      "quiet": True,
-      "no_warnings": True,
-      "geo_bypass": True,
-      "nocheckcertificate": True,
-      "user_agent": (
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-          " like Gecko) Chrome/122.0.0.0 Safari/537.36"
-      ),
-  }
-
-  with YoutubeDL(ydl_opts) as ydl:
-    info = ydl.extract_info(url, download=True)
-    filename = ydl.prepare_filename(info)
-
-    if not os.path.exists(filename):
-      base = os.path.splitext(filename)[0]
-      for ext in [".mp4", ".mkv", ".webm", ".mov"]:
-        if os.path.exists(base + ext):
-          filename = base + ext
-          break
-
-    title = info.get("title", "Video")
-    return filename, title
-
-
-# --- 2. QO'SHIQ NOMI BO'YICHA QIDIRISH (10 TA VARIANT) ---
-def search_songs(query: str):
-  ydl_opts = {
-      "format": "bestaudio/best",
-      "quiet": True,
-      "no_warnings": True,
-      "extract_flat": True,
-  }
-  search_query = f"ytsearch10:{query}"
-
-  with YoutubeDL(ydl_opts) as ydl:
-    try:
-      info = ydl.extract_info(search_query, download=False)
-      if "entries" in info:
-        return info["entries"]
-    except Exception as e:
-      print(f"Qidirishda xatolik: {e}")
-  return []
-
-
-# --- 3. TANLANGAN MUSIQANI YUKLAB OLISH ---
-def download_audio_by_url(video_url: str):
-  out_template = "downloads/%(id)s_audio.%(ext)s"
-  ydl_opts = {
-      "format": "bestaudio/best",
-      "outtmpl": out_template,
-      "max_filesize": 50 * 1024 * 1024,
-      "quiet": True,
-      "no_warnings": True,
-  }
-
-  with YoutubeDL(ydl_opts) as ydl:
-    try:
-      info = ydl.extract_info(video_url, download=True)
-      filename = ydl.prepare_filename(info)
-      song_title = info.get("title", "Musiqa")
-      return filename, song_title
-    except Exception as e:
-      print(f"Musiqani yuklab olishda xatolik: {e}")
-      return None, None
-
-
-@dp.message(Command("start"))
-async def start_cmd(message: types.Message):
+@dp.message(Command('start'))
+async def send_welcome(message: types.Message):
   await message.answer(
-      "👋 **Assalomu alaykum!**\n\n"
-      "📥 Menga Instagram, YouTube yoki TikTok **havolasini** yuboring (videoni yuklab beraman).\n"
-      "🎵 Yoki istalgan **qo'shiq nomini yozing**, men sizga 10 ta variant chiqarib beraman!"
+      "Salom! Menga istalgan qo'shiq nomini yozib yuboring (masalan: `Osmon Navro'z`)"
+      " yoki ijtimoiy tarmoq havolasini yuboring, uni yuklab beraman."
   )
 
 
-# --- HAVOLA KELGANDA ---
-@dp.message(F.text.regexp(URL_REGEX))
-async def handle_url(message: types.Message):
-  url = re.search(URL_REGEX, message.text).group(0)
-  status_msg = await message.answer(
-      "⏳ *Video yuklanmoqda, kuting...*", parse_mode="Markdown"
-  )
-
-  loop = asyncio.get_event_loop()
-  bot_info = await bot.get_me()
-
-  try:
-    user_links[message.from_user.id] = url
-    video_path, video_title = await loop.run_in_executor(
-        None, download_video, url
-    )
-
-    if video_path and os.path.exists(video_path):
-      video = FSInputFile(video_path)
-      keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-          InlineKeyboardButton(
-              text="📥 Qo'shiqni yuklab olish", callback_data="download_song"
-          )
-      ]])
-
-      await message.answer_video(
-          video=video,
-          caption=f"🎬 **{video_title[:100]}**\n\n🤖 @{bot_info.username}",
-          reply_markup=keyboard,
-      )
-      os.remove(video_path)
-
-    await status_msg.delete()
-
-  except Exception as e:
-    await status_msg.edit_text(
-        "⚠️ Xatolik yuz berdi. Havolani tekshirib qaytadan yuboring."
-    )
-    print(f"Xatolik: {e}")
-
-
-# --- MATN (QO'SHIQ NOMI) KELGANDA ---
 @dp.message(F.text)
-async def handle_text_search(message: types.Message):
-  query = message.text.strip()
-  status_msg = await message.answer(
-      "🔍 *Musiqalar qidirilmoqda, kuting...*", parse_mode="Markdown"
-  )
+async def handle_message(message: types.Message):
+  text = message.text.strip()
 
-  loop = asyncio.get_event_loop()
-  entries = await loop.run_in_executor(None, search_songs, query)
-
-  if not entries:
-    await status_msg.edit_text(
-        "⚠️ Hech qanday musiqa topilmadi. Boshqa nom yozib ko'ring."
-    )
-    return
-
-  user_search_results[message.from_user.id] = entries
-
-  text_response = f"🔍 **'{query}'** bo'yicha topilgan natijalar:\n\n"
-  buttons = []
-  row = []
-
-  for idx, entry in enumerate(entries[:10], start=1):
-    title = entry.get("title", "Noma'lum")
-    duration = entry.get("duration_string", "")
-    if duration:
-      text_response += f"{idx}. {title} - {duration}\n"
-    else:
-      text_response += f"{idx}. {title}\n"
-
-    row.append(
-        InlineKeyboardButton(
-            text=str(idx), callback_data=f"select_song_{idx-1}"
-        )
-    )
-    if len(row) == 5:
-      buttons.append(row)
-      row = []
-
-  if row:
-    buttons.append(row)
-
-  keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-  await status_msg.edit_text(
-      text=text_response, parse_mode="Markdown", reply_markup=keyboard
-  )
-
-
-# --- TUGMA BOSILganda (QO'SHIQNI TANLAB YUKLAB OLISH) ---
-@dp.callback_query(F.data.startswith("select_song_"))
-async def callback_select_song(callback: types.CallbackQuery):
-  user_id = callback.from_user.id
-  if (
-      user_id not in user_search_results
-      or not user_search_results[user_id]
-  ):
-    await callback.answer(
-        "⚠️ Natijalar eskirgan. Qaytadan qidiruv bering.", show_alert=True
-    )
-    return
-
-  index = int(callback.data.split("_")[2])
-  entries = user_search_results[user_id]
-
-  if index >= len(entries):
-    await callback.answer("⚠️ Xatolik yuz berdi.", show_alert=True)
-    return
-
-  selected_track = entries[index]
-  video_url = selected_track.get("url")
-  if not video_url:
-    video_url = f"https://www.youtube.com/watch?v={selected_track.get('id')}"
-
-  await callback.answer("🎵 Tanlangan musiqa yuklanmoqda...")
-  wait_msg = await callback.message.answer(
-      "📥 *Musiqa yuklab olinmoqda, kuting...*", parse_mode="Markdown"
-  )
-
-  loop = asyncio.get_event_loop()
-  bot_info = await bot.get_me()
-
-  audio_path, audio_title = await loop.run_in_executor(
-      None, download_audio_by_url, video_url
-  )
-
-  if audio_path and os.path.exists(audio_path):
-    audio = FSInputFile(audio_path)
-    await callback.message.answer_audio(
-        audio=audio,
-        caption=(
-            f"🎵 **{audio_title[:100]}**\n\n🤖 @{bot_info.username}"
-            " | [Yuklaydi Bot]"
-        ),
-    )
-    os.remove(audio_path)
+  # Agar xabar havola bo'lsa
+  if re.match(URL_REGEX, text):
+    await download_and_send_media(message, text)
   else:
-    await callback.message.answer(
-        "⚠️ Musiqani yuklab bo'lmadi. Boshqasini tanlab ko'ring."
+    # Matn bo'lsa YouTube'dan qidirish (10 ta natija)
+    waiting_msg = await message.answer(
+        f"🔍 '{text}' bo'yicha qidirilmoqda..."
     )
 
-  await wait_msg.delete()
+    try:
+      ydl_opts = {'extract_flat': True, 'quiet': True, 'default_search': 'ytsearch10'}
+      with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(text, download=False)
+        entries = info.get('entries', [])
+
+      if not entries:
+        await bot.edit_message_text(
+            "❌ Hech narsa topilmadi.",
+            chat_id=message.chat.id,
+            message_id=waiting_msg.message_id,
+        )
+        return
+
+      results_text = f"🔍 <b>'{text}'</b> bo'yicha topilgan natijalar:\n\n"
+      user_links = []
+
+      for i, entry in enumerate(entries, 1):
+        title = entry.get('title', 'Nomaʼlum')
+        url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
+        user_links.append(url)
+        results_text += f"{i}. {title}\n"
+
+      user_search_results[message.from_user.id] = user_links
+
+      # 1 dan 10 gacha tugmalar yaratish
+      keyboard_buttons = [
+          InlineKeyboardButton(text=str(i), callback_data=f"dl_{i}")
+          for i in range(1, len(entries) + 1)
+      ]
+      keyboard = InlineKeyboardMarkup(
+          inline_keyboard=[
+              keyboard_buttons[:5],
+              keyboard_buttons[5:],
+          ]
+      )
+
+      await bot.edit_message_text(
+          results_text,
+          chat_id=message.chat.id,
+          message_id=waiting_msg.message_id,
+          reply_markup=keyboard,
+          parse_mode='HTML',
+      )
+
+    except Exception as e:
+      await bot.edit_message_text(
+          f"❌ Qidirishda xatolik yuz berdi: {e}",
+          chat_id=message.chat.id,
+          message_id=waiting_msg.message_id,
+      )
 
 
-@dp.callback_query(F.data == "download_song")
-async def callback_download_song(callback: types.CallbackQuery):
+@dp.callback_query(F.data.startswith('dl_'))
+async def callback_download(callback: types.CallbackQuery):
   user_id = callback.from_user.id
-  if user_id not in user_links:
-    await callback.answer(
-        "⚠️ Havola eskirgan. Qaytadan yuboring.", show_alert=True
-    )
+  if user_id not in user_search_results:
+    await callback.answer("Eski qidiruv natijasi. Qaytadan qidiring.", show_alert=True)
     return
 
-  url = user_links[user_id]
-  await callback.answer("🎵 Qo'shiq qidirilmoqda...")
+  index = int(callback.data.split('_')[1]) - 1
+  links = user_search_results[user_id]
 
-  wait_msg = await callback.message.answer(
-      "🔍 *Musiqaning full versiyasi qidirilmoqda...*", parse_mode="Markdown"
-  )
-  loop = asyncio.get_event_loop()
-  bot_info = await bot.get_me()
+  if index >= len(links):
+    await callback.answer("Topilmadi.", show_alert=True)
+    return
 
+  url = links[index]
+  await callback.answer("Musiqa yuklab olinmoqda, kuting...")
+  
+  # Vaqtinchalik xabar yuborish
+  status_msg = await callback.message.answer("📥 Yuklab olinmoqda va yuborilmoqda...")
+  
+  await download_and_send_media(status_msg, url, edit_msg=True)
+
+
+async def download_and_send_media(message: types.Message, url: str, edit_msg=False):
+  output_template = 'downloads/%(id)s.%(ext)s'
+  os.makedirs('downloads', exist_ok=True)
+
+  ydl_opts = {
+      'format': 'bestaudio/best',
+      'outtmpl': output_template,
+      'postprocessors': [{
+          'key': 'FFmpegExtractAudio',
+          'preferredcodec': 'mp3',
+          'preferredquality': '192',
+      }],
+      'quiet': True,
+  }
+
+  file_path = None
   try:
-    audio_path, audio_title = await loop.run_in_executor(
-        None, download_audio_by_url, url
-    )
+    with YoutubeDL(ydl_opts) as ydl:
+      info = ydl.extract_info(url, download=True)
+      filename = ydl.prepare_filename(info)
+      file_path = os.path.splitext(filename)[0] + '.mp3'
+      title = info.get('title', 'audio')
 
-    if audio_path and os.path.exists(audio_path):
-      audio = FSInputFile(audio_path)
-      await callback.message.answer_audio(
-          audio=audio,
-          caption=(
-              f"🎵 **{audio_title[:100]} (Full Versiya)**\n\n🤖"
-              f" @{bot_info.username}"
-          ),
-      )
-      os.remove(audio_path)
+    if os.path.exists(file_path):
+      audio = FSInputFile(file_path)
+      if edit_msg:
+        await message.answer_audio(audio, caption=title)
+        await message.delete()
+      else:
+        await message.answer_audio(audio, caption=title)
     else:
-      await callback.message.answer("⚠️ Bu musiqani topib bo'lmadi.")
-
-    await wait_msg.delete()
-
+      if edit_msg:
+        await message.edit_text("⚠️ Musiqani yuklab bo'lmadi.")
+      else:
+        await message.answer("⚠️ Musiqani yuklab bo'lmadi.")
   except Exception as e:
-    await wait_msg.edit_text("⚠️ Musiqani yuklab olishda xatolik yuz berdi.")
-    print(f"Xatolik: {e}")
+    err_text = f"⚠️️ Xatolik yuz berdi: {str(e)[:100]}"
+    if edit_msg:
+      await message.edit_text(err_text)
+    else:
+      await message.answer(err_text)
+  finally:
+    if file_path and os.path.exists(file_path):
+      try:
+        os.remove(file_path)
+      except:
+        pass
 
 
 async def main():
-  if not os.path.exists("downloads"):
-    os.makedirs("downloads")
-  print("Bot muvaffaqiyatli ishga tushdi...")
+  # Flask serverini alohida oqimda (thread) ishga tushiramiz
+  web_thread = threading.Thread(target=run_web)
+  web_thread.daemon = True
+  web_thread.start()
+
+  # Botni ishga tushiramiz
   await dp.start_polling(bot)
 
 
-if __name__ == "__main__":
-  # Render port talabini qondirish uchun Flask serverni ishga tushiramiz
-  threading.Thread(target=run_web, daemon=True).start()
+if __name__ == '__main__':
   asyncio.run(main())
