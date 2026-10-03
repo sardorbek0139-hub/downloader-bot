@@ -7,7 +7,6 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from shazamio import Shazam
 import yt_dlp
 
-# yt-dlp kutubxonasini har safar yangilab turish uchun funksiya
 def update_ytdlp():
     try:
         subprocess.run(["pip", "install", "--upgrade", "yt-dlp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -24,7 +23,6 @@ shazam = Shazam()
 
 logging.basicConfig(level=logging.INFO)
 
-# Foydalanuvchilar qidirgan qo'shiqlar ro'yxatini saqlash uchun lug'at
 user_search_results = {}
 
 @dp.message(Command("start"))
@@ -50,10 +48,10 @@ async def handle_url(message: types.Message):
         'format': 'best',
         'outtmpl': output_template,
         'max_filesize': 50 * 1024 * 1024,
+        'cookiesfrombrowser': ('chrome',),  # Brauzerdan cookie olish (blokdan qochish uchun)
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         },
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
     
     try:
@@ -73,7 +71,7 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Raqam tanlanganda musiqa yuklash (Qidiruvdan oldin turishi shart!)
+# 2. Raqam tanlanganda musiqa yuklash
 @dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
@@ -98,16 +96,15 @@ async def download_selected_music(message: types.Message):
             except:
                 pass
 
-    # YouTube blokirovkasini chetlab o'tish uchun maxsus sozlamalar
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': 'downloaded_audio.%(ext)s',
         'max_filesize': 50 * 1024 * 1024,
         'noplaylist': True,
+        'cookiesfrombrowser': ('chrome',),  # Brauzerdan cookie olish
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         },
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
     
     downloaded_file = None
@@ -128,7 +125,7 @@ async def download_selected_music(message: types.Message):
                 audio_input = types.FSInputFile(downloaded_file)
                 await message.answer_audio(audio_input, caption=f"🎵 {title}")
             else:
-                await message.answer("⚠️ Musiqani yuklab bo'lmadi. Boshqa qo'shiqni tanlab ko'ring.")
+                await message.answer("⚠️ Musiqani yuklab bo'lmadi. YouTube bu so'rovni vaqtincha blokladi.")
     except Exception as e:
         logging.error(f"Audio yuklash xatosi: {e}")
         await message.answer("⚠️ Musiqani yuklab olishda xatolik yuz berdi.")
@@ -149,10 +146,10 @@ async def search_music(message: types.Message):
     ydl_opts = {
         'extract_flat': True,
         'skip_download': True,
+        'cookiesfrombrowser': ('chrome',),
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         },
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
     
     try:
