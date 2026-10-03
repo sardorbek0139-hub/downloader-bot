@@ -2,6 +2,7 @@ import logging
 import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from shazamio import Shazam
 import yt_dlp
 
@@ -13,6 +14,7 @@ shazam = Shazam()
 
 logging.basicConfig(level=logging.INFO)
 
+# Foydalanuvchi qidiruv natijalarini vaqtincha saqlash
 user_search_results = {}
 
 @dp.message(Command("start"))
@@ -20,7 +22,7 @@ async def start_handler(message: types.Message):
     await message.answer(
         "👋 Assalomu alaykum!\n\n"
         "📥 YouTube, Instagram, TikTok havolasini yuboring — videoni yuklab beraman.\n"
-        "🎵 Qo'shiq nomini yozing — 10 ta variant chiqaraman.\n"
+        "🎵 Qo'shiq nomini yozing — 10 ta variant chiqaraman (tugmani bosib yuklab olasiz).\n"
         "🎙 Audio yoki ovozli xabar yuboring — Shazam orqali tanib beraman!"
     )
 
@@ -57,7 +59,7 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Matn orqali musiqa qidirish
+# 2. Matn orqali musiqa qidirish va tugmalar yaratish
 @dp.message(F.text & ~F.text.startswith("/") & ~F.text.startswith("http"))
 async def search_music(message: types.Message):
     query = message.text.strip()
@@ -78,42 +80,53 @@ async def search_music(message: types.Message):
             await processing_msg.delete()
             return
             
-        text = f"🔎 *{query}* bo'yicha topilgan natijalar:\n\n"
+        text = f"🔎 **{query}** bo'yicha topilgan natijalar:\n\n"
         results = []
+        builder = InlineKeyboardBuilder()
+        
         for i, entry in enumerate(entries[:10], 1):
             title = entry.get('title', 'Noma\'lum')
             vid_id = entry.get('id')
             url = f"https://www.youtube.com/watch?v={vid_id}"
             results.append((title, url))
+            
+            # Matn ro'yxati
             text += f"{i}. {title}\n"
+            # Har bir qo'shiq uchun raqamli tugma qo'shish
+            builder.button(text=str(i), callback_data=f"dl_{i-1}")
             
         user_search_results[message.from_user.id] = results
-        text += "\n👇 Yuklab olish uchun **1 dan 10 gacha bo'lgan raqamni** yuboring!"
         
-        await message.answer(text, parse_mode="Markdown")
+        # Tugmalarni 5 tadan qatorlarga bo'lish
+        builder.adjust(5, 5)
+        
+        text += "\n👇 Yuklab olish uchun pastdagi **raqam tugmasini** bosing!"
+        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        
     except Exception as e:
         logging.error(f"Qidirish xatoligi: {e}")
         await message.answer("⚠️ Qidirishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
 
-# 3. Raqam yuborilganda musiqani yuklab berish
-@dp.message(F.text.isdigit())
-async def download_selected_music(message: types.Message):
-    user_id = message.from_user.id
+# 3. Tugma bosilganda musiqani yuklab berish
+@dp.callback_query(F.data.startswith("dl_"))
+async def callback_download_music(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
     if user_id not in user_search_results:
-        await message.answer("⚠️ Avval qo'shiq nomini yozib, qidiruv amalga oshiring!")
+        await callback.answer("⚠️ Avval qo'shiq qidiring!", show_alert=True)
         return
         
-    index = int(message.text) - 1
+    index = int(callback.data.split("_")[1])
     results = user_search_results[user_id]
     
     if index < 0 or index >= len(results):
-        await message.answer("❌ Iltimos, 1 dan 10 gacha bo'lgan to'g'ri raqamni tanlang.")
+        await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
         return
         
     title, url = results[index]
-    processing_msg = await message.answer(f"⏳ *{title}* yuklab olinmoqda, kuting...", parse_mode="Markdown")
+    await callback.answer(f"⏳ '{title}' yuklab olinmoqda...")
+    processing_msg = await callback.message.answer(f"⏳ *{title}* yuklab olinmoqda, kuting...", parse_mode="Markdown")
     
     # Eski fayllarni tozalash
     for f in os.listdir("."):
@@ -137,12 +150,12 @@ async def download_selected_music(message: types.Message):
             
         if downloaded_file and os.path.exists(downloaded_file):
             audio_input = types.FSInputFile(downloaded_file)
-            await message.answer_audio(audio_input, caption=f"🎵 {title}")
+            await callback.message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
-            await message.answer("❌ Musiqani yuklab bo'lmadi.")
+            await callback.message.answer("❌ Musiqani yuklab bo'lmadi.")
     except Exception as e:
         logging.error(f"Audio yuklash xatoligi: {e}")
-        await message.answer("⚠️ Musiqani yuklab olishda xatolik yuz berdi.")
+        await callback.message.answer("⚠️ Musiqani yuklab olishda xatolik yuz berdi.")
     finally:
         await processing_msg.delete()
         if downloaded_file and os.path.exists(downloaded_file):
