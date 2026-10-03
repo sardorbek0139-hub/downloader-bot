@@ -2,7 +2,7 @@ import logging
 import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from shazamio import Shazam
 import yt_dlp
 
@@ -58,78 +58,23 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Matn orqali musiqa qidirish (Har bir qo'shiq tagida o'z raqam tugmasi bilan)
-@dp.message(F.text & ~F.text.startswith("/") & ~F.text.startswith("http"))
-async def search_music(message: types.Message):
-    query = message.text.strip()
-    processing_msg = await message.answer(f"'{query}' bo'yicha qidirilmoqda...")
-    
-    ydl_opts = {
-        'extract_flat': True,
-        'skip_download': True,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch10:{query}", download=False)
-            entries = info.get('entries', [])
-            
-        if not entries:
-            await message.answer("Hech narsa topilmadi.")
-            await processing_msg.delete()
-            return
-            
-        results = []
-        for i, entry in enumerate(entries[:10], 1):
-            title = entry.get('title', 'Noma\'lum')
-            vid_id = entry.get('id')
-            url = f"https://www.youtube.com/watch?v={vid_id}"
-            
-            duration_sec = entry.get('duration')
-            if duration_sec:
-                mins = int(duration_sec) // 60
-                secs = int(duration_sec) % 60
-                duration_str = f"{mins}:{secs:02d}"
-            else:
-                duration_str = "0:00"
-                
-            results.append((title, url))
-            
-            # Har bir qo'shiq uchun alohida xabar va o'sha xabarning ostida uning raqam tugmasi
-            text = f"{i}. {title}\n⏱ {duration_str}"
-            
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=f"⬇️ {i}-qo'shiqni yuklab olish", callback_data=f"dl_{i-1}")]
-            ])
-            
-            await message.answer(text, reply_markup=keyboard)
-            
-        user_search_results[message.from_user.id] = results
-        
-    except Exception as e:
-        logging.error(f"Qidirish xatoligi: {e}")
-        await message.answer("Qidirishda xatolik yuz berdi.")
-    finally:
-        await processing_msg.delete()
-
-# 3. Tugma bosilganda musiqani yuklab berish
-@dp.callback_query(F.data.startswith("dl_"))
-async def callback_download_music(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
+# 2. Raqam yuborilganda musiqani yuklab berish
+@dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
+async def download_selected_music(message: types.Message):
+    user_id = message.from_user.id
     if user_id not in user_search_results:
-        await callback.answer("Avval qo'shiq qidiring!", show_alert=True)
+        await message.answer("Avval qo'shiq nomini yozib qidiruv amalga oshiring!")
         return
         
-    index = int(callback.data.split("_")[1])
+    index = int(message.text) - 1
     results = user_search_results[user_id]
     
     if index < 0 or index >= len(results):
-        await callback.answer("Xatolik yuz berdi.", show_alert=True)
+        await message.answer("Iltimos, 1 dan 10 gacha bo'lgan to'g'ri raqamni yuboring.")
         return
         
     title, url = results[index]
-    await callback.answer(f"'{title}' yuklab olinmoqda...")
-    processing_msg = await callback.message.answer(f"⏳ {title} yuklab olinmoqda, kuting...")
+    processing_msg = await message.answer(f"{title} yuklab olinmoqda, kuting...")
     
     for f in os.listdir("."):
         if f.startswith("downloaded_audio"):
@@ -152,9 +97,9 @@ async def callback_download_music(callback: types.CallbackQuery):
             
         if downloaded_file and os.path.exists(downloaded_file):
             audio_input = types.FSInputFile(downloaded_file)
-            await callback.message.answer_audio(audio_input, caption=f"🎵 {title}")
+            await message.answer_audio(audio_input, caption=f"🎵 {title}")
         else:
-            await callback.message.answer("Musiqani yuklab bo'lmadi.")
+            await message.answer("Musiqani yuklab bo'lmadi.")
     except Exception as e:
         logging.error(f"Audio yuklash xatoligi: {e}")
         await message.answer("Musiqani yuklab olishda xatolik yuz berdi.")
@@ -165,6 +110,66 @@ async def callback_download_music(callback: types.CallbackQuery):
                 os.remove(downloaded_file)
             except:
                 pass
+
+# 3. Matn orqali musiqa qidirish (2-rasmdagidek bir xabarda chiqish shakli)
+@dp.message(F.text & ~F.text.startswith("/") & ~F.text.startswith("http"))
+async def search_music(message: types.Message):
+    query = message.text.strip()
+    processing_msg = await message.answer(f"'{query}' bo'yicha qidirilmoqda...")
+    
+    ydl_opts = {
+        'extract_flat': True,
+        'skip_download': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch10:{query}", download=False)
+            entries = info.get('entries', [])
+            
+        if not entries:
+            await message.answer("Hech narsa topilmadi.")
+            await processing_msg.delete()
+            return
+            
+        text = f"{query}\n\n"
+        results = []
+        
+        kb_builder = ReplyKeyboardBuilder()
+        
+        for i, entry in enumerate(entries[:10], 1):
+            title = entry.get('title', 'Noma\'lum')
+            vid_id = entry.get('id')
+            url = f"https://www.youtube.com/watch?v={vid_id}"
+            
+            # Davomiyligini sekunddan minut:sekund formatiga o'tkazish
+            duration_sec = entry.get('duration')
+            if duration_sec:
+                mins = int(duration_sec) // 60
+                secs = int(duration_sec) % 60
+                duration_str = f"{mins}:{secs:02d}"
+            else:
+                duration_str = "0:00"
+                
+            results.append((title, url))
+            
+            # 2-rasmdagidek: Nomi va qator oxirida davomiyligi
+            text += f"{i}. {title} {duration_str}\n"
+            kb_builder.add(types.KeyboardButton(text=str(i)))
+            
+        user_search_results[message.from_user.id] = results
+        
+        # Tugmalarni 5 tadan qatorlarga bo'lish (1-5 birinchi qatorda, 6-10 ikkinchi qatorda)
+        kb_builder.adjust(5, 5)
+        keyboard = kb_builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
+        
+        await message.answer(text, reply_markup=keyboard)
+        
+    except Exception as e:
+        logging.error(f"Qidirish xatoligi: {e}")
+        await message.answer("Qidirishda xatolik yuz berdi.")
+    finally:
+        await processing_msg.delete()
 
 # 4. Shazam orqali musiqa tanish
 @dp.message(F.voice | F.audio)
