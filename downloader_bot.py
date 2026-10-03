@@ -7,6 +7,10 @@ from aiogram.filters import Command
 from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from flask import Flask
 from yt_dlp import YoutubeDL
+import imageio_ffmpeg
+
+# Render uchun ffmpeg yo'lini avtomatik topish
+ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
 
 BOT_TOKEN = "8995513531:AAGgkooEJXFkdXoF5OpT25gliipK_Zq1Z14"
 
@@ -121,7 +125,6 @@ async def callback_download(callback: types.CallbackQuery):
   url = links[index]
   await callback.answer("Musiqa yuklab olinmoqda, kuting...")
   
-  # Vaqtinchalik xabar yuborish
   status_msg = await callback.message.answer("📥 Yuklab olinmoqda va yuborilmoqda...")
   
   await download_and_send_media(status_msg, url, edit_msg=True)
@@ -134,6 +137,7 @@ async def download_and_send_media(message: types.Message, url: str, edit_msg=Fal
   ydl_opts = {
       'format': 'bestaudio/best',
       'outtmpl': output_template,
+      'ffmpeg_location': ffmpeg_path,
       'postprocessors': [{
           'key': 'FFmpegExtractAudio',
           'preferredcodec': 'mp3',
@@ -163,7 +167,7 @@ async def download_and_send_media(message: types.Message, url: str, edit_msg=Fal
       else:
         await message.answer("⚠️ Musiqani yuklab bo'lmadi.")
   except Exception as e:
-    err_text = f"⚠️️ Xatolik yuz berdi: {str(e)[:100]}"
+    err_text = f"⚠️ Xatolik yuz berdi: {str(e)[:100]}"
     if edit_msg:
       await message.edit_text(err_text)
     else:
@@ -177,12 +181,10 @@ async def download_and_send_media(message: types.Message, url: str, edit_msg=Fal
 
 
 async def main():
-  # Flask serverini alohida oqimda (thread) ishga tushiramiz
   web_thread = threading.Thread(target=run_web)
   web_thread.daemon = True
   web_thread.start()
 
-  # Botni ishga tushiramiz
   await dp.start_polling(bot)
 
 
