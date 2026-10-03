@@ -22,7 +22,7 @@ URL_REGEX = r'https?://[^\s]+'
 # Har bir foydalanuvchi uchun qidiruv natijalarini saqlash
 user_search_results = {}
 
-# Flask serverini yaratamiz (Render time out bermasligi uchun)
+# Flask serverini yaratamiz
 app = Flask(__name__)
 
 @app.route("/", methods=["GET", "HEAD"])
@@ -46,17 +46,22 @@ async def send_welcome(message: types.Message):
 async def handle_message(message: types.Message):
   text = message.text.strip()
 
-  # Agar xabar havola bo'lsa
   if re.match(URL_REGEX, text):
     await download_and_send_media(message, text)
   else:
-    # Matn bo'lsa YouTube'dan qidirish (10 ta natija)
     waiting_msg = await message.answer(
         f"🔍 '{text}' bo'yicha qidirilmoqda..."
     )
 
     try:
-      ydl_opts = {'extract_flat': True, 'quiet': True, 'default_search': 'ytsearch10'}
+      ydl_opts = {
+          'extract_flat': True, 
+          'quiet': True, 
+          'default_search': 'ytsearch10',
+          'http_headers': {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          }
+      }
       with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(text, download=False)
         entries = info.get('entries', [])
@@ -80,7 +85,6 @@ async def handle_message(message: types.Message):
 
       user_search_results[message.from_user.id] = user_links
 
-      # 1 dan 10 gacha tugmalar yaratish
       keyboard_buttons = [
           InlineKeyboardButton(text=str(i), callback_data=f"dl_{i}")
           for i in range(1, len(entries) + 1)
@@ -138,6 +142,9 @@ async def download_and_send_media(message: types.Message, url: str, edit_msg=Fal
       'format': 'bestaudio/best',
       'outtmpl': output_template,
       'ffmpeg_location': ffmpeg_path,
+      'http_headers': {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
       'postprocessors': [{
           'key': 'FFmpegExtractAudio',
           'preferredcodec': 'mp3',
