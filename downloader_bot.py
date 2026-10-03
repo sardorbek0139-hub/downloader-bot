@@ -58,7 +58,7 @@ async def handle_url(message: types.Message):
         if os.path.exists(output_template):
             os.remove(output_template)
 
-# 2. Raqam yuborilganda musiqani yuklab berish
+# 2. Raqam yuborilganda musiqani yuklab berish (Qidiruvdan oldin tekshiriladi!)
 @dp.message(F.text.regexp(r"^(?:[1-9]|10)$"))
 async def download_selected_music(message: types.Message):
     user_id = message.from_user.id
@@ -111,7 +111,7 @@ async def download_selected_music(message: types.Message):
             except:
                 pass
 
-# 3. Matn orqali musiqa qidirish (2-rasmdagidek bir xabarda chiqish shakli)
+# 3. Matn orqali musiqa qidirish
 @dp.message(F.text & ~F.text.startswith("/") & ~F.text.startswith("http"))
 async def search_music(message: types.Message):
     query = message.text.strip()
@@ -132,37 +132,28 @@ async def search_music(message: types.Message):
             await processing_msg.delete()
             return
             
-        text = f"{query}\n\n"
+        text = f"🔍 {query} bo'yicha topilgan natijalar:\n\n"
         results = []
         
+        # Oson bosish uchun pastki klaviatura (ReplyKeyboardMarkup) tugmalarini yasash
         kb_builder = ReplyKeyboardBuilder()
         
         for i, entry in enumerate(entries[:10], 1):
             title = entry.get('title', 'Noma\'lum')
             vid_id = entry.get('id')
             url = f"https://www.youtube.com/watch?v={vid_id}"
-            
-            # Davomiyligini sekunddan minut:sekund formatiga o'tkazish
-            duration_sec = entry.get('duration')
-            if duration_sec:
-                mins = int(duration_sec) // 60
-                secs = int(duration_sec) % 60
-                duration_str = f"{mins}:{secs:02d}"
-            else:
-                duration_str = "0:00"
-                
             results.append((title, url))
             
-            # 2-rasmdagidek: Nomi va qator oxirida davomiyligi
-            text += f"{i}. {title} {duration_str}\n"
+            text += f"{i}. {title}\n"
             kb_builder.add(types.KeyboardButton(text=str(i)))
             
         user_search_results[message.from_user.id] = results
         
-        # Tugmalarni 5 tadan qatorlarga bo'lish (1-5 birinchi qatorda, 6-10 ikkinchi qatorda)
+        # Tugmalarni 5 tadan qatorlarga bo'lish
         kb_builder.adjust(5, 5)
         keyboard = kb_builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
         
+        text += "\n👇 Yuklab olish uchun pastdagi tugmalardan raqamni tanlang yoki yuboring!"
         await message.answer(text, reply_markup=keyboard)
         
     except Exception as e:
@@ -182,9 +173,9 @@ async def handle_audio(message: types.Message):
         file = await bot.get_file(file_id)
         file_path = file.file_path
         
-        download_bytes = await bot.download_file(file_path)
+        downloaded_file_bytes = await bot.download_file(file_path)
         with open(audio_file_name, "wb") as f:
-            f.write(download_bytes.read())
+            f.write(downloaded_file_bytes.read())
             
         out = await shazam.recognize(audio_file_name)
         
